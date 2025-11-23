@@ -8,6 +8,11 @@ This project implements a high-precision, low-latency Named Entity Recognition (
 
 The objective was to identify sensitive entities (Credit Cards, Phones, Emails, Names, Dates) with a **PII Precision target of ≥ 0.80** while maintaining a strict inference latency budget of **p95 ≤ 20ms** on a standard CPU.
 
+## Deliverables and Links
+*   **Trained Model Weights:** [Google Drive Link](https://drive.google.com/drive/folders/1MjIAEWO-y_hQfykwNDu5uoPSV-9Wtcun?usp=sharing)
+*   **Generated Datasets:** [Google Drive Link](https://drive.google.com/drive/folders/1A2-h_VbV4HGppKXOBV2Vq68Yhsm7xv2R?usp=sharing)
+*   **Output Files (Dev):** [Google Drive Link](https://drive.google.com/drive/folders/1VGD_FN5TUriX0OJ15d5Vl4SGM8OzlzWO?usp=sharing)
+
 ---
 
 ## 1. Data Preparation Strategy
