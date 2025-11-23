@@ -38,7 +38,7 @@ To prevent class imbalance (e.g., the model overfitting to "Person Names" becaus
 
 While newer architectures like DeBERTa were evaluated, **DeBERTa yielded an inference latency of ~40ms**, violating the project constraints. Consequently, the solution optimized the `distilbert-base-uncased` architecture to maximize performance within the latency budget.
 
-Significant improvements over the baseline (PII Precision ~0.73) were achieved through specific hyperparameter tuning:
+Significant improvements over the baseline (PII Precision ~0.686) were achieved through specific hyperparameter tuning:
 
 ### A. Training Epochs (3 $\to$ 20)
 The noisy nature of STT data requires the model to learn subtle contextual cues rather than relying on capitalization or punctuation. Increasing the training duration to 20 epochs allowed the model to converge on these more complex patterns.
