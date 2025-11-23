@@ -4,17 +4,20 @@ import os
 
 # --- Configuration ---
 OUTPUT_DIR = "data"
-NUM_TRAIN = 5000
-NUM_DEV = 500
-NUM_TEST = 500 
+NUM_TRAIN = 2500
+NUM_DEV = 250
+NUM_TEST = 250 
 
-# Probability of generating a "perfect transcript" vs "noisy STT"
+# Probability of "Clean" (perfect spelling) vs "Noisy" (STT)
 PROB_CLEAN = 0.3 
 
 # --- Vocabularies ---
-FIRST_NAMES = ["james", "mary", "john", "patricia", "robert", "jennifer", "michael", "linda", "william", "elizabeth", "david", "barbara", "richard", "susan", "joseph", "jessica", "thomas", "sarah", "charles", "karen", "priya", "rahul", "wei", "akira", "mohammed", "fatima", "carlos", "maria", "yuki", "sven", "rohan", "arjun", "mei", "hiro", "sofia", "luca", "oliver", "emma", "liam", "noah", "ava", "elijah", "mateo"]
+# Names that overlap with Cities/Locations (To force context learning)
+AMBIGUOUS_NAMES = ["austin", "sydney", "paris", "london", "brooklyn", "jordan", "alexandria", "victoria", "shannon", "chelsea", "savannah"]
+
+FIRST_NAMES = ["james", "mary", "john", "patricia", "robert", "jennifer", "michael", "linda", "william", "elizabeth", "david", "barbara", "richard", "susan", "joseph", "jessica", "thomas", "sarah", "charles", "karen", "priya", "rahul", "wei", "akira", "mohammed", "fatima", "carlos", "maria", "yuki", "sven", "rohan", "arjun", "mei", "hiro", "sofia", "luca", "oliver", "emma", "liam", "noah", "ava", "elijah", "mateo"] + AMBIGUOUS_NAMES
 LAST_NAMES = ["smith", "johnson", "williams", "brown", "jones", "garcia", "miller", "davis", "rodriguez", "martinez", "hernandez", "lopez", "gonzalez", "wilson", "anderson", "thomas", "taylor", "moore", "jackson", "martin", "mehta", "patel", "kim", "lee", "singh", "chen", "wong", "sato", "tanaka", "gupta", "sharma", "khan", "wu", "zhao"]
-CITIES = ["new york", "los angeles", "chicago", "houston", "phoenix", "philadelphia", "san antonio", "san diego", "dallas", "san jose", "london", "paris", "tokyo", "mumbai", "delhi", "shanghai", "singapore", "dubai", "toronto", "sydney", "berlin", "bangalore", "beijing", "seoul", "madrid", "rome", "austin", "miami", "denver", "boston", "seattle"]
+CITIES = ["new york", "los angeles", "chicago", "houston", "phoenix", "philadelphia", "san antonio", "san diego", "dallas", "san jose", "london", "paris", "tokyo", "mumbai", "delhi", "shanghai", "singapore", "dubai", "toronto", "sydney", "berlin", "bangalore", "beijing", "seoul", "madrid", "rome", "austin", "miami", "denver", "boston", "seattle"] + AMBIGUOUS_NAMES
 LOCATIONS = ["central park", "heathrow airport", "grand central", "eiffel tower", "times square", "golden gate bridge", "hyde park", "marina bay", "burj khalifa", "opera house", "wall street", "broadway", "terminal 4", "main street", "fifth avenue", "hotel california", "empire state building", "buckingham palace", "shinjuku station"]
 DOMAINS = ["gmail", "yahoo", "hotmail", "outlook", "icloud", "company", "corporate", "live", "protonmail", "aol", "zoho"]
 TLDS = ["com", "net", "org", "co", "uk", "io", "gov", "edu", "co.in", "jp"]
@@ -52,12 +55,7 @@ def introduce_typos(text, error_rate=0.05):
     return "".join(chars)
 
 def simulate_stt_errors(text, clean_mode=False, noise_prob=0.2):
-    """
-    If clean_mode is True, returns text as is.
-    Otherwise, replaces words with phonetic equivalents or glitches.
-    """
     if clean_mode: return text
-    
     words = text.split()
     new_words = []
     for w in words:
@@ -79,12 +77,7 @@ def get_filler(clean_mode=False):
 # --- Entity Generators ---
 
 def digit_to_speech(digit_str, clean_mode=False, complexity=0.5):
-    """
-    clean_mode=True: returns '1234'
-    clean_mode=False: returns 'one two 3 four' mixed
-    """
     if clean_mode: return digit_str
-    
     output = []
     for char in digit_str:
         if random.random() < complexity:
@@ -95,11 +88,24 @@ def digit_to_speech(digit_str, clean_mode=False, complexity=0.5):
             output.append(char)
     return " ".join(output)
 
+# --- DECOY Generator (Crucial for Precision) ---
+def gen_decoy_number(clean_mode):
+    # Generates things like "Room 102", "Flight 99", "Order 5555"
+    # These look like numbers but are NOT PII.
+    # We return (text, None) meaning no label
+    prefix = random.choice(["room", "flight", "order", "ticket", "gate", "channel", "page", "chapter", "seat"])
+    nums = str(random.randint(10, 9999))
+    
+    if clean_mode:
+        return f"{prefix} {nums}", None 
+    
+    # Noisy version
+    num_speech = digit_to_speech(nums, False, 0.3)
+    return f"{prefix} {num_speech}", None
+
 def gen_credit_card(clean_mode):
     groups = ["".join([str(random.randint(0,9)) for _ in range(4)]) for _ in range(4)]
-    if clean_mode:
-        return " ".join(groups), "CREDIT_CARD"
-    
+    if clean_mode: return " ".join(groups), "CREDIT_CARD"
     final_parts = [digit_to_speech(g, False, 0.7) for g in groups]
     return " ".join(final_parts), "CREDIT_CARD"
 
@@ -108,12 +114,9 @@ def gen_phone(clean_mode):
     p2 = "".join([str(random.randint(0,9)) for _ in range(3)])
     p3 = "".join([str(random.randint(0,9)) for _ in range(4)])
     full_str = p1 + p2 + p3
-    
     if clean_mode:
-        # 50% chance of XXX-XXX-XXXX vs XXXXXXXXXX
         if random.random() < 0.5: return f"{p1}-{p2}-{p3}", "PHONE"
         else: return full_str, "PHONE"
-        
     text = digit_to_speech(full_str, False, 0.5)
     return text, "PHONE"
 
@@ -122,11 +125,7 @@ def gen_email(clean_mode):
     lname = random.choice(LAST_NAMES)
     domain = random.choice(DOMAINS)
     tld = random.choice(TLDS)
-    
-    if clean_mode:
-        return f"{name}.{lname}@{domain}.{tld}".lower(), "EMAIL"
-    
-    # Noisy construction
+    if clean_mode: return f"{name}.{lname}@{domain}.{tld}".lower(), "EMAIL"
     sep_word = random.choice(["dot", "point", "underscore", ""])
     user = f"{name} {sep_word} {lname}".strip()
     at = random.choice(["at", "@"])
@@ -138,18 +137,13 @@ def gen_date(clean_mode):
     month = random.choice(MONTHS)
     day = random.randint(1, 31)
     year = random.randint(1980, 2030)
-    
-    if clean_mode:
-        return f"{month} {day}, {year}", "DATE"
-    
+    if clean_mode: return f"{month} {day}, {year}", "DATE"
     style = random.choice(["standard", "ordinal", "short"])
     if style == "standard":
         d_str = digit_to_speech(str(day), False, 0.4)
         text = f"{month} {d_str} {year}"
     elif style == "ordinal":
         suffix = "th"
-        if day in [1, 21, 31]: suffix = "st"
-        elif day in [2, 22]: suffix = "nd"
         d_str = f"{day}{suffix}" if random.random() < 0.5 else str(day)
         text = f"the {d_str} of {month}"
     else:
@@ -177,46 +171,48 @@ def gen_location(clean_mode):
 # --- Main Generator ---
 
 def generate_utterance(idx, id_prefix):
-    # Decide if this entire utterance is "Clean" (Perfect) or "Noisy" (STT)
     is_clean = random.random() < PROB_CLEAN
     
-    # Allow up to 5 entities for high density
-    num_ents = random.choices([1, 2, 3, 4, 5], weights=[0.3, 0.3, 0.2, 0.1, 0.1])[0]
+    # Up to 5 entities per utterance for density
+    num_ents = random.choices([1, 2, 3, 4, 5], weights=[0.2, 0.3, 0.3, 0.1, 0.1])[0]
     
-    generators = [gen_person, gen_city, gen_location, gen_email, gen_phone, gen_credit_card, gen_date]
+    # Define generators and WEIGHTS to prioritize PII over Locations/Cities
+    # Also includes DECOY numbers to improve precision
+    generators = [gen_person, gen_city, gen_location, gen_email, gen_phone, gen_credit_card, gen_date, gen_decoy_number]
+    # Weights:    Name,       City,     Loc,          Email,     Phone,     CC,              Date,     Decoy
+    weights    = [0.18,       0.05,     0.05,         0.15,      0.15,      0.15,            0.15,     0.12]
     
     full_text_parts = [] 
     entities_list = []
     
-    # --- The Fix: Robust Text Appender ---
+    # Robust Text Appender
     def add_part(txt, is_entity=False, label=None):
-        if not txt: return # Skip empty strings
+        if not txt: return
 
-        # Apply noise if it's NOT an entity (Entities handle their own noise internally)
+        # Apply noise if it's NOT an entity 
+        # (Entities/Decoys handle their own noise internally)
         final_txt = txt
         if not is_entity:
             final_txt = simulate_stt_errors(txt, clean_mode=is_clean, noise_prob=0.1)
             
-        # DETERMINE SEPARATOR:
-        # If it's the start of sentence, no space.
-        # Otherwise, default to space " ".
+        # Determine Separator
         sep = ""
         if len(full_text_parts) > 0:
             sep = " "
-            
-        # Handle punctuation specifics (optional polish)
         if final_txt in [".", ",", "?"]: 
-            sep = "" # Attach punctuation to previous word
+            sep = "" 
             
         # Calculate Start/End
         current_full_str = "".join(full_text_parts)
-        start_idx = len(current_full_str) + len(sep) # Start after the separator
+        start_idx = len(current_full_str) + len(sep)
         end_idx = start_idx + len(final_txt)
         
-        # Append to list including the separator
+        # Append
         full_text_parts.append(sep + final_txt)
         
-        if is_entity:
+        # Only record valid entities (Label != None)
+        # Decoys return Label=None, so they get added to text but NOT to entities list
+        if is_entity and label is not None:
             entities_list.append({
                 "start": start_idx,
                 "end": end_idx,
@@ -225,51 +221,48 @@ def generate_utterance(idx, id_prefix):
 
     # --- Build Sentence ---
     
-    # Intro
     if random.random() < 0.4:
         add_part(random.choice(["hi", "hello", "ok", "yeah", "hey"]))
-    
     if random.random() < 0.4:
         add_part(random.choice(["my details are", "please update", "record this", "i am"]))
 
     for i in range(num_ents):
-        gen = random.choice(generators)
+        # Select weighted generator
+        gen = random.choices(generators, weights=weights, k=1)[0]
         ent_text, ent_label = gen(is_clean)
         
         # Connector
         if i > 0:
-            conn = random.choice(["and", "also", "then", "plus"])
-            if is_clean: conn += "," # Add punctuation in clean mode
+            conn = random.choice(["and", "also", "then", "plus", "wait"])
+            if is_clean: conn += "," 
             
-            # Context bridging
+            # Context bridging based on label
             if ent_label == "PHONE": conn += " phone is"
             elif ent_label == "EMAIL": conn += " email"
             elif ent_label == "CREDIT_CARD": conn += " card number"
             elif ent_label == "DATE": conn += " date"
             elif ent_label == "CITY": conn += " in"
+            # Decoy context
+            elif ent_label is None: conn += " check"
             
             add_part(conn)
         elif i == 0:
             # First entity context
-            if ent_label == "PHONE" and "details" not in "".join(full_text_parts): 
-                add_part("my number is")
-            elif ent_label == "EMAIL": 
-                add_part("email address")
-            elif ent_label == "CITY":
-                add_part("living in")
+            if ent_label == "PHONE": add_part("my number is")
+            elif ent_label == "EMAIL": add_part("email address")
+            elif ent_label == "PERSON_NAME": add_part("my name is")
+            elif ent_label == "CITY": add_part("living in")
 
-        # Filler (only in noisy mode)
+        # Filler
         filler = get_filler(is_clean)
         if filler: add_part(filler.strip())
         
-        # The Entity
+        # The Entity (or Decoy)
         add_part(ent_text, is_entity=True, label=ent_label)
         
-    # Outro
     if random.random() < 0.3:
         add_part(random.choice(["thanks", "bye", "is that correct", "please"]))
 
-    # Final String
     full_string = "".join(full_text_parts)
     
     return {
